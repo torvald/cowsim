@@ -23,6 +23,27 @@ class Simulation:
         self.cows = Cows(config)
         self.config = config
 
+        walls = [(6, 9, 2, 4)]
+
+        for wall in walls:
+            x, y, direction, length = wall
+           # y = wall[1]
+           # direction = wall[2]
+           # length = wall[3]
+            w = Wall()
+            self.barn.place(w, (x,y))
+            for n in range(length):
+                if direction == 6:
+                    x += 1
+                elif direction == 2:
+                    y -= 1
+                elif direction == 4:
+                    x -= 1
+                elif direction == 8:
+                    y += 1
+                w = Wall()
+                self.barn.place(w, (x,y))
+
         for i in range(self.cows.count()):
             x, y = None, None
             while True:
@@ -34,6 +55,7 @@ class Simulation:
             cow = Cow()
             self.barn.place(cow, (x, y)) 
         #    self.schedule.add(cows)
+
 
     def state(self):
         return {'barn': self.barn.state()}
