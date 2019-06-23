@@ -5,10 +5,11 @@ import time
 import math
 import numpy
 import collections
-from pprint import pprint
+from pprint import pprint, pformat
 
 debug = True
 tests = True
+slowmo = False
 threads = 1 if debug else multiprocessing.cpu_count()-2
 
 sec_per_step = 20
@@ -73,31 +74,43 @@ class Simulation:
             while True:
                 x, y = self.random_pos()
                 if self.barn.is_cell_empty((x, y)): break
-            self.barn.place_agent(cow, (x, y)) 
+            self.barn.place_agent(cow, (x, y))
 
-        g = Grass(self) 
-        x, y = None, None
-        while True:
-            x, y = self.random_pos()
-            if self.barn.is_cell_empty((x, y)): break
-        self.barn.grass_positions.append((x,y))
-        self.barn.place_agent(g, (x, y)) 
+        for i in range(10):
+            g = Grass(self)
+            x, y = None, None
+            while True:
+                x, y = self.random_pos()
+                if self.barn.is_cell_empty((x, y)): break
+            self.barn.grass_positions.append((x,y))
+            self.barn.place_agent(g, (x, y))
 
-        w = Water(self) 
-        x, y = None, None
-        while True:
-            x, y = self.random_pos()
-            if self.barn.is_cell_empty((x, y)): break
-        self.barn.water_positions.append((x,y))
-        self.barn.place_agent(w, (x, y)) 
+        for i in range(5):
+            f = Feeder(self)
+            x, y = None, None
+            while True:
+                x, y = self.random_pos()
+                if self.barn.is_cell_empty((x, y)): break
+            self.barn.concentrate_positions.append((x,y))
+            self.barn.place_agent(f, (x, y))
 
-        b = Bed(self) 
-        x, y = None, None
-        while True:
-            x, y = self.random_pos()
-            if self.barn.is_cell_empty((x, y)): break
-        self.barn.sleep_positions.append((x,y))
-        self.barn.place_agent(b, (x, y)) 
+        for i in range(10):
+            w = Water(self)
+            x, y = None, None
+            while True:
+                x, y = self.random_pos()
+                if self.barn.is_cell_empty((x, y)): break
+            self.barn.water_positions.append((x,y))
+            self.barn.place_agent(w, (x, y))
+
+        for i in range(20):
+            b = Bed(self)
+            x, y = None, None
+            while True:
+                x, y = self.random_pos()
+                if self.barn.is_cell_empty((x, y)): break
+            self.barn.sleep_positions.append((x,y))
+            self.barn.place_agent(b, (x, y)) 
 
     def random_pos(self):
         x = random.randrange(config['barn_height'])
@@ -114,6 +127,8 @@ class Simulation:
         output = "Step: {}\n".format(state['step'])
         grid = state['barn']['grid']
         debug_cow_path = state['debug_cow'].current_path
+        debug_cow_state = state['debug_cow'].state()
+        population = state['barn']['population']
         for x in range(len(grid)):
             for y in range(len(grid[x])):
                 if grid[x][y]:
@@ -124,6 +139,9 @@ class Simulation:
                     output += " "
 
             output += "\n"
+        output += pformat(population, indent=4)
+        output += pformat(debug_cow_state, indent=4)
+
         return output
 
     def run(self):
@@ -131,7 +149,13 @@ class Simulation:
             self.step = s
             for cow in self.cows:
                 if cow.alive: cow.step()
-            if s % 100 == 0 and self.config['generate_stats']:
+
+            stats_modulo = 100
+            if slowmo:
+                stats_modulo = 1
+                time.sleep(0.1)
+
+            if s % stats_modulo == 0 and self.config['generate_stats']:
                 file = open("stats.json","w") 
                 file.write(self.http_rep(self.state())) 
                 file.close() 
@@ -185,6 +209,7 @@ class Barn():
 
     def move_agent(self, agent, new_pos):
         if tests:
+            x,y = new_pos
             assert(self.is_cell_walkable(new_pos))
         old_x, old_y = agent.pos
         new_x, new_y = new_pos
@@ -199,7 +224,9 @@ class Barn():
         agent.update_pos(pos)
 
     def state(self):
-        return {'grid': self.grid}
+        dead = len([x for x in self.cows if x.alive])
+        return {'grid': self.grid,
+                'population': {'dead': dead}}
 
 class Agent(object):
     model = None
@@ -239,10 +266,31 @@ class WalkingAgent(Agent):
             self.model.move_agent(self, next_move)
         else:
             print("No legal moves for cow in {}".format(self.pos))
+            print(self.model.neighborhood(self.pos))
+            time.sleep(10)
 
     def move(self):
+        # [0] is start posistion, [1] is where we want to go next
         target = self.current_target
-        self.random_move()
+
+        if len(self.current_path) == 0:
+            print ("bfs thinks you should stay put") 
+            #self.current_path = None
+            return
+
+        if len(self.current_path) == 1:
+            # good? [0] is where we are at, sit still
+            #self.current_path = None
+            return
+
+        self.current_path = self.current_path[1:]
+        next_move = self.current_path[0]
+        if self.model.is_cell_walkable(next_move):
+            self.model.move_agent(self, next_move)
+        else:
+            print("{} is not walkable, forcing new search".format(next_move))
+            self.current_objective = None
+            #self.random_move()
 
     def bfs(self, grid, start, target):
         queue = collections.deque([[start]])
@@ -302,31 +350,36 @@ class Cow(WalkingAgent):
         self.water -= use_water_per_step
         self.grass -= use_grass_per_step
         neighbors = self.model.neighbors(self.pos)
+
         if any(type(agent) is Water for agent in neighbors) and self.water < self.model.config['max_water']: self.water += drinks_per_step
         if any(type(agent) is Grass for agent in neighbors) and self.grass < self.model.config['max_grass']: self.grass += eats_grass_per_step
-        #if any(type(agent) is Feeder for agent in neighbors) and self.concentrates < 20: self.concentrates += 4
+        if any(type(agent) is Feeder for agent in neighbors) and self.concentrates < self.model.config['max_concentrate']: self.concentrates += eats_consentrate_per_step
+
+        if self.water <= 0 or self.grass <= 0:
+            self.alive = False
 
     def _update_target(self, new_objective):
         self.current_objective = new_objective
-        print(self.current_objective)
         if new_objective == "eat_grass":
             self.current_target = random.choice(self.model.grass_positions)
         if new_objective == "drink":
             self.current_target = random.choice(self.model.water_positions)
+        if new_objective == "eat_concentrates":
+            self.current_target = random.choice(self.model.concentrate_positions)
         if new_objective == "sleep":
             self.current_target = random.choice(self.model.sleep_positions)
         self.current_path = self.bfs(self.model.grid, self.pos, self.current_target)
-        
+
     def _calc_objective(self):
         # if on the move, easier to change cow's mind
         if self.moving:
             if self.water < 50: return "drink"
-            #if self.concentrates < 10: return "eat_concentrates"
+            if self.concentrates < 10: return "eat_concentrates"
             if self.grass < 10: return "eat_grass"
         # doing somthing, chaning my mind takes more effort
         else:
             if self.water < 25: return "drink"
-            #if self.concentrates < 5: return "eat_concentrates"
+            if self.concentrates < 5: return "eat_concentrates"
             if self.grass < 5: return "eat_grass"
         return "sleep"
 
@@ -337,10 +390,14 @@ class Cow(WalkingAgent):
 
     def state(self):
         return {'pos': self.pos,
+                'alive': self.alive,
                 'current_target': self.current_target,
                 'current_objective': self.current_objective,
+                'water': self.water,
+                'concentrates': self.concentrates,
+                'grass': self.grass,
                 'path': self.current_path,
-                'water': self.water}
+                }
 
     def __repr__(self):
         if not self.alive: return 'X'
