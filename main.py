@@ -8,12 +8,27 @@ from pprint import pprint
 
 debug = True
 tests = True
-threads = 1 if debug else multiprocessing.cpu_count()
+threads = 1 if debug else multiprocessing.cpu_count()-2
+
+sec_per_step = 20
+need_water_per_24hour = 100
+use_water_per_step = need_water_per_24hour / 24 / 60 / 60 * sec_per_step
+need_grass_per_24hour = 30
+use_grass_per_step = need_grass_per_24hour / 24 / 60 / 60 * sec_per_step
+drinks_per_step = 1
+eats_grass_per_step = 0.5
+eats_consentrate_per_step = 0.3
+
 
 config = {'steps': 50000, 'barn_width': 20,
-              'barn_height' : 20,
-              'number_of_cows' : 10,
-              'generate_stats': False}
+        'barn_height' : 20,
+        'number_of_cows' : 10,
+        'generate_stats': False,
+        'max_water': 100,
+        'max_grass': 30,
+        'max_concentrate': 20,
+        'max_milk': 30,
+        }
 
 class Simulation:
     config = None
@@ -31,9 +46,6 @@ class Simulation:
 
         for wall in walls:
             x, y, direction, length = wall
-           # y = wall[1]
-           # direction = wall[2]
-           # length = wall[3]
             w = Wall(self.barn)
             self.barn.place_agent(w, (x,y))
             for n in range(length):
@@ -54,11 +66,23 @@ class Simulation:
                 x = random.randrange(config['barn_width'])
                 y = random.randrange(config['barn_height'])
                 if self.barn.is_cell_empty((x, y)): break
-#            energy = self.random.randrange(2 * self.cows_gain_from_food)
-#            cows = Cow(self.next_id(), (x, y), self, False, energy)
             self.barn.place_agent(cow, (x, y)) 
-        #    self.schedule.add(cows)
 
+        f = Feeder(self) 
+        x, y = None, None
+        while True:
+            x = random.randrange(config['barn_width'])
+            y = random.randrange(config['barn_height'])
+            if self.barn.is_cell_empty((x, y)): break
+        self.barn.place_agent(f, (x, y)) 
+
+        w = Water(self) 
+        x, y = None, None
+        while True:
+            x = random.randrange(config['barn_width'])
+            y = random.randrange(config['barn_height'])
+            if self.barn.is_cell_empty((x, y)): break
+        self.barn.place_agent(w, (x, y)) 
 
     def state(self):
         return {'barn': self.barn.state(),
@@ -74,36 +98,26 @@ class Simulation:
                 else:
                     output += " "
 
-            output += "\r"
+            output += "\n"
         return output
 
     def run(self):
         for s in range(self.config['steps']):
             self.step = s
             for cow in self.cows:
-                cow.step()
-                if s % 100 == 0 and self.config['generate_stats']:
-                    file = open("stats.json","w") 
-                    file.write(self.http_rep(self.state())) 
-                    file.close() 
+                if cow.alive: cow.step()
+            if s % 100 == 0 and self.config['generate_stats']:
+                file = open("stats.json","w") 
+                file.write(self.http_rep(self.state())) 
+                file.close() 
 
-
-#class Cows:
-#    cows = None
-#
-#    def __init__(self, cows):
-#        self.cows = cows
-#
-#    def count(self):
-#        return len(self.cows)
-#
-#    def cows(self):
-#        return self.cows
 
 class Barn():
     grid = None
+    config = None
 
     def __init__(self, config):
+        self.config = config
         w, h = config['barn_width'], config['barn_height']
         self.grid = [[[] for x in range(w)] for y in range(h)]
 
@@ -168,6 +182,11 @@ class Agent(object):
 
 
 class WalkingAgent(Agent):
+    alive = True
+    moving = False
+
+    current_target = None
+    current_path = None
 
     def __init__(self, model):
         # Ensure Walking Agents always stay on top of other objects
@@ -182,18 +201,55 @@ class WalkingAgent(Agent):
             print("No legal moves for cow in {}".format(self.pos))
 
 class Cow(WalkingAgent):
-    water = 50
+    grass = None
+    water = None
+    concentrates = None
+    milk = None
+    sleep = None
+
+    current_objective = None
 
     def __init__(self, model):
         super().__init__(model)
+        self.water = random.randrange(model.config['max_water'])
+        self.grass = random.randrange(model.config['max_grass'])
+        self.concentrates = random.randrange(model.config['max_concentrate'])
+        self.milk = random.randrange(model.config['max_milk'])
 
     def step(self):
+        self._update_healt()
+        self._update_target()
         self.random_move()
 
-    def water(self):
-        return water
+    def _update_healt(self):
+        # Assuming on step is about 15 sec
+        pass
+
+    def _update_target(self):
+        new_objective = self._calc_objective()
+        if new_objective == self.current_objective:
+            return self.current_target
+
+    def _calc_objective(self):
+        # if on the move, easier to change cow's mind
+        if self.moving:
+            if self.water < 50: return "drink"
+            if self.concentrates < 10: return "eat_concentrates"
+            if self.grass < 10: return "eat_grass"
+        # doing somthing, chaning my mind takes more effort
+        else:
+            if self.water < 25: return "drink"
+            if self.concentrates < 5: return "eat_concentrates"
+            if self.grass < 5: return "eat_grass"
+        return "sleep"
+
+
+    def healt(self):
+        pass
+        #if self.water <= 0 or selg.grass <= 0:
 
     def __repr__(self):
+        if not self.alive: return 'X'
         return 'K'
 
 class Wall(Agent):
@@ -203,11 +259,66 @@ class Wall(Agent):
     def __repr__(self):
         return '#'
 
+class Bed(Agent):
+    def __init__(self, model):
+        super().__init__(model, weight=99)
+
+    def __repr__(self):
+        return 'B'
+
+class Feeder(Agent):
+    def __init__(self, model):
+        super().__init__(model, weight=99)
+
+    def __repr__(self):
+        return 'F'
+
+class Water(Agent):
+    def __init__(self, model):
+        super().__init__(model, weight=99)
+
+    def __repr__(self):
+        return 'W'
+
+class Grass(Agent):
+    def __init__(self, model):
+        super().__init__(model, weight=99)
+
+    def __repr__(self):
+        return 'G'
+
+class OneWayGate(Agent):
+    def __init__(self, model):
+        super().__init__(model, weight=99)
+        self.direction = direction
+
+    def valid_entry_grid(self, pos):
+        gate_pos_x, gate_pos_y = self.pos
+        entry_pos_x, entry_pos_y = pos
+        if self.direction == "→":
+            if gate_pos_x == entry_pos_x-1 and gate_pos_y == entry_pos_y: return True
+        if self.direction == "←":
+            if gate_pos_x == entry_pos_x+1 and gate_pos_y == entry_pos_y: return True
+        if self.direction == "↑":
+            if gate_pos_x == entry_pos_x and gate_pos_y == entry_pos_y-1: return True
+        if self.direction == "↓":
+            if gate_pos_x == entry_pos_x and gate_pos_y == entry_pos_y+1: return True
+        return False
+
+    def __repr__(self):
+        return self.direction
+
+class SmartGate(Agent):
+    def __init__(self, model):
+        super().__init__(model, weight=99)
+        self.direction = direction
+
+    def __repr__(self):
+        return '#'
+
 def sim(config):
     sim = Simulation(config)
-    #pprint(sim.state())
     sim.run()
-    #pprint(sim.state())
 
     rand = bool(random.getrandbits(1))
     return rand
@@ -251,7 +362,7 @@ if __name__ == '__main__':
     print(results)
 
     end = time.time()
-    
+
     print ("The average number of steps is ", int(sum(results) / len(results)), " steps")
     print ("The simulation(s) took ", end - start, " seconds to run")
 
