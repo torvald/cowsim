@@ -4,6 +4,7 @@ import random
 import time
 import math
 import numpy
+import collections
 from pprint import pprint
 
 debug = True
@@ -20,9 +21,9 @@ eats_grass_per_step = 0.5
 eats_consentrate_per_step = 0.3
 
 
-config = {'steps': 50000, 'barn_width': 20,
-        'barn_height' : 20,
-        'number_of_cows' : 10,
+config = {'steps': 50000, 'barn_height': 20,
+        'barn_width' : 70,
+        'number_of_cows' : 20,
         'generate_stats': False,
         'max_water': 100,
         'max_grass': 30,
@@ -41,8 +42,14 @@ class Simulation:
         self.config = config
 
         self.cows = [Cow(self.barn) for x in range(config['number_of_cows'])]
+        if debug: self.cows[0].debug(True)
 
-        walls = [(6, 9, 2, 4)]
+        walls = []
+        for i in range(10):
+            x,y = self.random_pos()
+            direction = random.choice([2,4,6,8])
+            length = random.randrange(10)
+            walls.append((x,y,direction,length))
 
         for wall in walls:
             x, y, direction, length = wall
@@ -58,43 +65,61 @@ class Simulation:
                 elif direction == 8:
                     y += 1
                 w = Wall(self.barn)
-                self.barn.place_agent(w, (x,y))
+                if self.barn.valid_cell((x,y)):
+                    self.barn.place_agent(w, (x,y))
 
         for cow in self.cows:
             x, y = None, None
             while True:
-                x = random.randrange(config['barn_width'])
-                y = random.randrange(config['barn_height'])
+                x, y = self.random_pos()
                 if self.barn.is_cell_empty((x, y)): break
             self.barn.place_agent(cow, (x, y)) 
 
-        f = Feeder(self) 
+        g = Grass(self) 
         x, y = None, None
         while True:
-            x = random.randrange(config['barn_width'])
-            y = random.randrange(config['barn_height'])
+            x, y = self.random_pos()
             if self.barn.is_cell_empty((x, y)): break
-        self.barn.place_agent(f, (x, y)) 
+        self.barn.grass_positions.append((x,y))
+        self.barn.place_agent(g, (x, y)) 
 
         w = Water(self) 
         x, y = None, None
         while True:
-            x = random.randrange(config['barn_width'])
-            y = random.randrange(config['barn_height'])
+            x, y = self.random_pos()
             if self.barn.is_cell_empty((x, y)): break
+        self.barn.water_positions.append((x,y))
         self.barn.place_agent(w, (x, y)) 
 
+        b = Bed(self) 
+        x, y = None, None
+        while True:
+            x, y = self.random_pos()
+            if self.barn.is_cell_empty((x, y)): break
+        self.barn.sleep_positions.append((x,y))
+        self.barn.place_agent(b, (x, y)) 
+
+    def random_pos(self):
+        x = random.randrange(config['barn_height'])
+        y = random.randrange(config['barn_width'])
+        return (x,y)
+
     def state(self):
+        debug_cow = next(cow for cow in self.cows if cow.debug)
         return {'barn': self.barn.state(),
-                'step': self.step}
+                'step': self.step,
+                'debug_cow': debug_cow}
 
     def http_rep(self, state):
         output = "Step: {}\n".format(state['step'])
-        grid = state['barn']
-        for x in grid:
-            for y in x:
-                if y:
-                    output += str(max(y, key=lambda agent: agent.weight))
+        grid = state['barn']['grid']
+        debug_cow_path = state['debug_cow'].current_path
+        for x in range(len(grid)):
+            for y in range(len(grid[x])):
+                if grid[x][y]:
+                    output += str(max(grid[x][y], key=lambda agent: agent.weight))
+                elif (x,y) in debug_cow_path:
+                    output += "o"
                 else:
                     output += " "
 
@@ -115,11 +140,15 @@ class Simulation:
 class Barn():
     grid = None
     config = None
+    grass_positions = []
+    water_positions = []
+    concentrate_positions = []
+    sleep_positions = []
 
     def __init__(self, config):
         self.config = config
-        w, h = config['barn_width'], config['barn_height']
-        self.grid = [[[] for x in range(w)] for y in range(h)]
+        w, h = config['barn_height'], config['barn_width']
+        self.grid = [[[] for x in range(h)] for y in range(w)]
 
     def neighborhood(self, pos):
         x, y = pos
@@ -128,6 +157,13 @@ class Barn():
             if self.valid_cell((x+x_delta,y+y_delta)):
                 neighborhood.append((x+x_delta,y+y_delta))
         return neighborhood
+
+    def neighbors(self, pos):
+        neighbors = []
+        for pos in self.neighborhood(pos):
+            x,y = pos
+            neighbors += self.grid[x][y]
+        return neighbors
 
     def valid_cell(self, pos):
         x, y = pos
@@ -156,19 +192,20 @@ class Barn():
         self.grid[new_x][new_y].append(agent)
         agent.update_pos(new_pos)
 
-    def place_agent(self, cow, pos):
+    def place_agent(self, agent, pos):
         x, y = pos
         # TODO: check
-        self.grid[x][y].append(cow)
-        cow.update_pos(pos)
+        self.grid[x][y].append(agent)
+        agent.update_pos(pos)
 
     def state(self):
-        return self.grid
+        return {'grid': self.grid}
 
 class Agent(object):
     model = None
     weight = None
     pos = None
+    debug = False
 
     def __init__(self, model, weight=100):
         self.model = model
@@ -179,6 +216,9 @@ class Agent(object):
 
     def update_pos(self,pos):
         self.pos = pos
+
+    def debug(self, value):
+        self.debug = value
 
 
 class WalkingAgent(Agent):
@@ -200,6 +240,37 @@ class WalkingAgent(Agent):
         else:
             print("No legal moves for cow in {}".format(self.pos))
 
+    def move(self):
+        target = self.current_target
+        self.random_move()
+
+    def bfs(self, grid, start, target):
+        queue = collections.deque([[start]])
+        seen = set([start])
+        while queue:
+            path = queue.popleft()
+            x, y = path[-1]
+            if (x,y) == target:
+                return path
+            explore = [(x+1,y), (x-1,y), (x,y+1), (x,y-1)]
+            random.shuffle(explore)
+            for x2, y2 in explore:
+                # ignore cells out of bound
+                if not self.model.valid_cell((x2, y2)): continue
+                # Dont search though walls
+                agents = grid[x2][y2]
+                if any(type(agent) is Wall for agent in agents): continue
+                # and dont goto cells we have seen before
+                if (x2, y2) in seen: continue
+                # if we search through a onewaygate, check that you are on valid side
+                if any(type(agent) is OneWayGate for agent in agents):
+                    on_way_gate = list(filter(lambda x: type(x) is OneWayGate, agents))[0]
+                    if on_way_gate.valid_entry_grid((x,y)): continue
+                # looks good, lets search further
+                queue.append(path + [(x2, y2)])
+                seen.add((x2, y2))
+        return []
+
 class Cow(WalkingAgent):
     grass = None
     water = None
@@ -217,29 +288,45 @@ class Cow(WalkingAgent):
         self.milk = random.randrange(model.config['max_milk'])
 
     def step(self):
-        self._update_healt()
-        self._update_target()
-        self.random_move()
-
-    def _update_healt(self):
-        # Assuming on step is about 15 sec
-        pass
-
-    def _update_target(self):
+        self._update_state()
         new_objective = self._calc_objective()
-        if new_objective == self.current_objective:
-            return self.current_target
+        if new_objective != self.current_objective:
+            self._update_target(new_objective)
+        # move toward current target
+        if tests:
+            assert self.current_objective is not None
+            assert self.current_target is not None
+        self.move() 
 
+    def _update_state(self):
+        self.water -= use_water_per_step
+        self.grass -= use_grass_per_step
+        neighbors = self.model.neighbors(self.pos)
+        if any(type(agent) is Water for agent in neighbors) and self.water < self.model.config['max_water']: self.water += drinks_per_step
+        if any(type(agent) is Grass for agent in neighbors) and self.grass < self.model.config['max_grass']: self.grass += eats_grass_per_step
+        #if any(type(agent) is Feeder for agent in neighbors) and self.concentrates < 20: self.concentrates += 4
+
+    def _update_target(self, new_objective):
+        self.current_objective = new_objective
+        print(self.current_objective)
+        if new_objective == "eat_grass":
+            self.current_target = random.choice(self.model.grass_positions)
+        if new_objective == "drink":
+            self.current_target = random.choice(self.model.water_positions)
+        if new_objective == "sleep":
+            self.current_target = random.choice(self.model.sleep_positions)
+        self.current_path = self.bfs(self.model.grid, self.pos, self.current_target)
+        
     def _calc_objective(self):
         # if on the move, easier to change cow's mind
         if self.moving:
             if self.water < 50: return "drink"
-            if self.concentrates < 10: return "eat_concentrates"
+            #if self.concentrates < 10: return "eat_concentrates"
             if self.grass < 10: return "eat_grass"
         # doing somthing, chaning my mind takes more effort
         else:
             if self.water < 25: return "drink"
-            if self.concentrates < 5: return "eat_concentrates"
+            #if self.concentrates < 5: return "eat_concentrates"
             if self.grass < 5: return "eat_grass"
         return "sleep"
 
@@ -247,6 +334,13 @@ class Cow(WalkingAgent):
     def healt(self):
         pass
         #if self.water <= 0 or selg.grass <= 0:
+
+    def state(self):
+        return {'pos': self.pos,
+                'current_target': self.current_target,
+                'current_objective': self.current_objective,
+                'path': self.current_path,
+                'water': self.water}
 
     def __repr__(self):
         if not self.alive: return 'X'
