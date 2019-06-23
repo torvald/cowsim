@@ -9,14 +9,14 @@ from pprint import pprint, pformat
 
 debug = True
 tests = True
-slowmo = False
+slowmo = True
 threads = 1 if debug else multiprocessing.cpu_count()-2
 
 sec_per_step = 20
 need_water_per_24hour = 100
-use_water_per_step = need_water_per_24hour / 24 / 60 / 60 * sec_per_step
+use_water_per_step = need_water_per_24hour / 24.0 / 60 / 60 * sec_per_step
 need_grass_per_24hour = 30
-use_grass_per_step = need_grass_per_24hour / 24 / 60 / 60 * sec_per_step
+use_grass_per_step = need_grass_per_24hour / 24.0 / 60 / 60 * sec_per_step
 drinks_per_step = 1
 eats_grass_per_step = 0.5
 eats_consentrate_per_step = 0.3
@@ -42,7 +42,7 @@ class Simulation:
         self.barn = Barn(config)
         self.config = config
 
-        self.cows = [Cow(self.barn) for x in range(config['number_of_cows'])]
+        self.cows = [Cow(self) for x in range(config['number_of_cows'])]
         if debug: self.cows[0].debug(True)
 
         walls = []
@@ -54,7 +54,7 @@ class Simulation:
 
         for wall in walls:
             x, y, direction, length = wall
-            w = Wall(self.barn)
+            w = Wall(self)
             self.barn.place_agent(w, (x,y))
             for n in range(length):
                 if direction == 6:
@@ -65,7 +65,7 @@ class Simulation:
                     x -= 1
                 elif direction == 8:
                     y += 1
-                w = Wall(self.barn)
+                w = Wall(self)
                 if self.barn.valid_cell((x,y)):
                     self.barn.place_agent(w, (x,y))
 
@@ -119,7 +119,12 @@ class Simulation:
 
     def state(self):
         debug_cow = next(cow for cow in self.cows if cow.debug)
-        return {'barn': self.barn.state(),
+        dead = len([cow for cow in self.cows if not cow.alive])
+        water = [cow.water for cow in self.cows]
+#print("Mean:", numpy.mean(results), " Median:", numpy.median(results), " Stdev:", numpy.std(results))
+        return {'model': {'dead': dead, 'water_mean': numpy.mean(water),
+            'water_median': numpy.median(water), 'water_stdev': numpy.std(water)},
+                'barn': self.barn.state(),
                 'step': self.step,
                 'debug_cow': debug_cow}
 
@@ -128,7 +133,7 @@ class Simulation:
         grid = state['barn']['grid']
         debug_cow_path = state['debug_cow'].current_path
         debug_cow_state = state['debug_cow'].state()
-        population = state['barn']['population']
+        model = state['model']
         for x in range(len(grid)):
             for y in range(len(grid[x])):
                 if grid[x][y]:
@@ -139,7 +144,8 @@ class Simulation:
                     output += " "
 
             output += "\n"
-        output += pformat(population, indent=4)
+        output += pformat(model, indent=4)
+        output += "\n"
         output += pformat(debug_cow_state, indent=4)
 
         return output
@@ -163,14 +169,12 @@ class Simulation:
 
 class Barn():
     grid = None
-    config = None
     grass_positions = []
     water_positions = []
     concentrate_positions = []
     sleep_positions = []
 
     def __init__(self, config):
-        self.config = config
         w, h = config['barn_height'], config['barn_width']
         self.grid = [[[] for x in range(h)] for y in range(w)]
 
@@ -182,8 +186,9 @@ class Barn():
                 neighborhood.append((x+x_delta,y+y_delta))
         return neighborhood
 
-    def neighbors(self, pos):
-        neighbors = []
+    def neighbors(self, pos, include_center=False):
+        x,y = pos
+        neighbors = [self.grid[x][y]] if include_center else []
         for pos in self.neighborhood(pos):
             x,y = pos
             neighbors += self.grid[x][y]
@@ -224,9 +229,7 @@ class Barn():
         agent.update_pos(pos)
 
     def state(self):
-        dead = len([x for x in self.cows if x.alive])
-        return {'grid': self.grid,
-                'population': {'dead': dead}}
+        return {'grid': self.grid}
 
 class Agent(object):
     model = None
@@ -260,13 +263,13 @@ class WalkingAgent(Agent):
         super().__init__(model, weight=101)
 
     def random_move(self):
-        next_moves = [pos for pos in self.model.neighborhood(self.pos) if self.model.is_cell_walkable(pos)]
+        next_moves = [pos for pos in self.model.barn.neighborhood(self.pos) if self.model.barn.is_cell_walkable(pos)]
         if len(next_moves) > 0:
             next_move = random.choice(next_moves)
-            self.model.move_agent(self, next_move)
+            self.model.barn.move_agent(self, next_move)
         else:
             print("No legal moves for cow in {}".format(self.pos))
-            print(self.model.neighborhood(self.pos))
+            print(self.model.barn.neighborhood(self.pos))
             time.sleep(10)
 
     def move(self):
@@ -285,8 +288,8 @@ class WalkingAgent(Agent):
 
         self.current_path = self.current_path[1:]
         next_move = self.current_path[0]
-        if self.model.is_cell_walkable(next_move):
-            self.model.move_agent(self, next_move)
+        if self.model.barn.is_cell_walkable(next_move):
+            self.model.barn.move_agent(self, next_move)
         else:
             print("{} is not walkable, forcing new search".format(next_move))
             self.current_objective = None
@@ -304,7 +307,7 @@ class WalkingAgent(Agent):
             random.shuffle(explore)
             for x2, y2 in explore:
                 # ignore cells out of bound
-                if not self.model.valid_cell((x2, y2)): continue
+                if not self.model.barn.valid_cell((x2, y2)): continue
                 # Dont search though walls
                 agents = grid[x2][y2]
                 if any(type(agent) is Wall for agent in agents): continue
@@ -330,10 +333,10 @@ class Cow(WalkingAgent):
 
     def __init__(self, model):
         super().__init__(model)
-        self.water = random.randrange(model.config['max_water'])
-        self.grass = random.randrange(model.config['max_grass'])
-        self.concentrates = random.randrange(model.config['max_concentrate'])
-        self.milk = random.randrange(model.config['max_milk'])
+        self.water = random.randrange(model.config['max_water']/2, model.config['max_water'])
+        self.grass = random.randrange(model.config['max_grass']/2, model.config['max_grass'])
+        self.concentrates = random.randrange(model.config['max_concentrate']/2, model.config['max_concentrate'])
+        self.milk = random.randrange(model.config['max_milk']/2,model.config['max_milk'])
 
     def step(self):
         self._update_state()
@@ -349,7 +352,7 @@ class Cow(WalkingAgent):
     def _update_state(self):
         self.water -= use_water_per_step
         self.grass -= use_grass_per_step
-        neighbors = self.model.neighbors(self.pos)
+        neighbors = self.model.barn.neighbors(self.pos, include_center=True)
 
         if any(type(agent) is Water for agent in neighbors) and self.water < self.model.config['max_water']: self.water += drinks_per_step
         if any(type(agent) is Grass for agent in neighbors) and self.grass < self.model.config['max_grass']: self.grass += eats_grass_per_step
@@ -361,14 +364,14 @@ class Cow(WalkingAgent):
     def _update_target(self, new_objective):
         self.current_objective = new_objective
         if new_objective == "eat_grass":
-            self.current_target = random.choice(self.model.grass_positions)
+            self.current_target = random.choice(self.model.barn.grass_positions)
         if new_objective == "drink":
-            self.current_target = random.choice(self.model.water_positions)
+            self.current_target = random.choice(self.model.barn.water_positions)
         if new_objective == "eat_concentrates":
-            self.current_target = random.choice(self.model.concentrate_positions)
+            self.current_target = random.choice(self.model.barn.concentrate_positions)
         if new_objective == "sleep":
-            self.current_target = random.choice(self.model.sleep_positions)
-        self.current_path = self.bfs(self.model.grid, self.pos, self.current_target)
+            self.current_target = random.choice(self.model.barn.sleep_positions)
+        self.current_path = self.bfs(self.model.barn.grid, self.pos, self.current_target)
 
     def _calc_objective(self):
         # if on the move, easier to change cow's mind
