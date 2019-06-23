@@ -10,14 +10,16 @@ debug = True
 tests = True
 threads = 1 if debug else multiprocessing.cpu_count()
 
-config = {'steps': 5, 'barn_width': 50,
-              'barn_height' : 50,
-              'number_of_cows' : 10}
+config = {'steps': 50000, 'barn_width': 20,
+              'barn_height' : 20,
+              'number_of_cows' : 10,
+              'generate_stats': False}
 
 class Simulation:
     config = None
     barn = None
     cows = None
+    step = 0
 
     def __init__(self, config):
         self.barn = Barn(config)
@@ -59,12 +61,31 @@ class Simulation:
 
 
     def state(self):
-        return {'barn': self.barn.state()}
+        return {'barn': self.barn.state(),
+                'step': self.step}
+
+    def http_rep(self, state):
+        output = "Step: {}\n".format(state['step'])
+        grid = state['barn']
+        for x in grid:
+            for y in x:
+                if y:
+                    output += str(max(y, key=lambda agent: agent.weight))
+                else:
+                    output += " "
+
+            output += "\r"
+        return output
 
     def run(self):
         for s in range(self.config['steps']):
+            self.step = s
             for cow in self.cows:
                 cow.step()
+                if s % 100 == 0 and self.config['generate_stats']:
+                    file = open("stats.json","w") 
+                    file.write(self.http_rep(self.state())) 
+                    file.close() 
 
 
 #class Cows:
@@ -191,6 +212,25 @@ def sim(config):
     rand = bool(random.getrandbits(1))
     return rand
 
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class web_server(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/':
+            self.path = '/stats.json'
+        try:
+            #Reading the file
+            file_to_open = open(self.path[1:]).read()
+            self.send_response(200)
+        except:
+            file_to_open = "File not found"
+            self.send_response(404)
+        self.end_headers()
+        self.wfile.write(bytes(file_to_open, 'utf-8'))
+
+def http_server():
+    httpd = HTTPServer(('193.35.52.75', 8585), web_server)
+    httpd.serve_forever()
 
 if __name__ == '__main__':
     print ("There are ", threads, " threads")
@@ -201,8 +241,12 @@ if __name__ == '__main__':
     for k in range(threads):
         jobs.append(config)
 
+    jobs[0]['generate_stats'] = True
+
+    http_server = multiprocessing.Process(name='http_server', target=http_server)
     pool = multiprocessing.Pool(threads)
 
+    http_server.start()
     results = pool.map(sim, jobs)
     print(results)
 
