@@ -9,7 +9,8 @@ from pprint import pprint, pformat
 
 debug = True
 tests = True
-slowmo = True
+slowmo = False
+profile = False
 threads = 1 if debug else multiprocessing.cpu_count() - 2
 
 sec_per_step = 20
@@ -23,7 +24,7 @@ eats_consentrate_per_step = 0.3
 
 
 config = {
-    "steps": 50000,
+    "steps": 10000,
     "barn_height": 20,
     "barn_width": 70,
     "number_of_cows": 20,
@@ -276,6 +277,7 @@ class Agent(object):
 class WalkingAgent(Agent):
     alive = True
     moving = False
+    stuck_recalc = 0
 
     current_target = None
     current_path = None
@@ -317,7 +319,7 @@ class WalkingAgent(Agent):
         if self.model.barn.is_cell_walkable(next_move):
             self.model.barn.move_agent(self, next_move)
         else:
-            print("{} is not walkable, forcing new search".format(next_move))
+            self.stuck_recalc += 1
             self.current_objective = None
             # self.random_move()
 
@@ -460,6 +462,7 @@ class Cow(WalkingAgent):
             "water": self.water,
             "concentrates": self.concentrates,
             "grass": self.grass,
+            "stuck_recalc": self.stuck_recalc,
             "path": self.current_path,
         }
 
@@ -546,7 +549,12 @@ class SmartGate(Agent):
 
 def sim(config):
     sim = Simulation(config)
-    sim.run()
+    if profile:
+        # todo add worker number awareness and add to file name
+        import cProfile
+        cProfile.runctx('sim.run()', globals(), locals(), 'profile.prof')
+    else:
+        sim.run()
 
     rand = bool(random.getrandbits(1))
     return rand
