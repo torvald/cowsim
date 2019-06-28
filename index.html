@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+<meta content="utf-8" http-equiv="encoding">
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+<html>
+<head>
+    <title>Cowsim</title>
+    <script>
+
+    $( document ).ready(function() {
+        function getData() {
+             $.ajax({
+              type: 'GET',
+              url: 'http://193.35.52.75:8585/stats.json',
+              dataType: 'json',
+              success: function (data) {
+                displayGrid(data);
+              }
+            });
+        };
+
+        getData();
+        function loop () {
+            setTimeout(function () {
+                getData();
+                loop();
+            }, 500);
+        }
+        loop();
+    });
+
+    var gridOptions = {
+        color: '#f2f2f2',
+        grid_size: 24,
+        LinesSize: 1
+    };
+
+    function image(name) {
+	    var img = new Image();
+	    img.src = 'images/'+name+'.png';
+        return img
+    }
+
+    var ctx, canvas;
+
+    function displayGrid(data) {
+        var grid_size;
+        canvas = document.getElementById("barn");
+        if (canvas.getContext) {
+            ctx = canvas.getContext("2d");
+            ctx.strokeStyle = gridOptions.color;
+            ctx.lineWidth = parseInt(gridOptions.LinesSize);
+            grid_size = 0;
+            grid_size = parseInt(gridOptions.grid_size);
+            canvas.width  = grid_size * data[0].length;
+            canvas.height = grid_size * data.length;
+            for (x = 0; x < data[0].length; x += 1) {
+                for (y = 0; y < data.length; y += 1) {
+                    var canvas_x = x * grid_size;
+                    var canvas_y = y * grid_size;
+                    //ctx.fillText(data[x][y], canvas_x, canvas_y);
+                    var agents = data[y][x];
+                    if (agents.length === 0) { continue; }
+                    agents.sort((a, b) => a.weight - b.weight);
+                    agent_type = agents[0]['type'];
+                    if (true) { ctx.clearRect ( canvas_x, canvas_y, grid_size, grid_size ); }
+                    for (var i = 0; i < agents.length; i++) {
+                        var agent = agents[i];
+                        if (agent['type'] === '#') { ctx.drawImage(image('wall'), canvas_x, canvas_y, grid_size, grid_size); }
+                        if (agent['type'] === 'W') { ctx.drawImage(image('water'), canvas_x, canvas_y, grid_size, grid_size); }
+                        if (agent['type'] === 'G') { ctx.drawImage(image('grass'), canvas_x, canvas_y, grid_size, grid_size); }
+                        if (agent['type'] === 'B') { ctx.drawImage(image('bed'), canvas_x, canvas_y, grid_size, grid_size); }
+                        if (agent['type'] === 'F') { ctx.drawImage(image('feeder'), canvas_x, canvas_y, grid_size, grid_size); }
+                        if (agent['type'] === 'K') { ctx.drawImage(image('cow'), canvas_x, canvas_y, grid_size, grid_size); }
+                        if (agent['debug']) { ctx.fillText("debug-ku", canvas_x, canvas_y); }
+                    }
+                }
+            }
+        }
+    }
+    </script>
+</head>
+
+<body onload="">
+    <h2>Cowsim</h2>
+    <canvas id="barn" width="" height="">
+    </canvas>
+    <br />
+    Options:
+    <select id="" onchange="">
+        <option value="">Xyz</option>
+        <option value="">Placeholder </option>
+    </select>
+</body>
+
+</html>

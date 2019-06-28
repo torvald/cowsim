@@ -5,11 +5,12 @@ import time
 import math
 import numpy
 import collections
+import json
 from pprint import pprint, pformat
 
 debug = True
 tests = True
-slowmo = False
+slowmo = True
 profile = False
 threads = 1 if debug else multiprocessing.cpu_count() - 2
 
@@ -48,7 +49,7 @@ class Simulation:
 
         self.cows = [Cow(self) for x in range(config["number_of_cows"])]
         if debug:
-            self.cows[0].debug(True)
+            self.cows[0].update_debug(True)
 
         walls = []
         for i in range(10):
@@ -144,7 +145,7 @@ class Simulation:
             "debug_cow": debug_cow,
         }
 
-    def http_rep(self, state):
+    def human_readable_state(self, state):
         output = "Step: {}\n".format(state["step"])
         grid = state["barn"]["grid"]
         debug_cow_path = state["debug_cow"].current_path
@@ -153,9 +154,9 @@ class Simulation:
         for x in range(len(grid)):
             for y in range(len(grid[x])):
                 if grid[x][y]:
-                    output += str(max(grid[x][y], key=lambda agent: agent.weight))
+                    output += max(grid[x][y], key=lambda agent: agent.weight).ASCIIDraw()
                 elif (x, y) in debug_cow_path:
-                    output += "o"
+                    output += "*"
                 else:
                     output += " "
 
@@ -165,6 +166,25 @@ class Simulation:
         output += pformat(debug_cow_state, indent=4)
 
         return output
+
+    def json_state(self, state):
+        grid = state["barn"]["grid"]
+        debug_cow_path = state["debug_cow"].current_path
+        debug_cow_state = state["debug_cow"].state()
+        model = state["model"]
+        w, h = len(grid), len(grid[0])
+        to_json = [[[] for x in range(h)] for y in range(w)]
+        for x in range(len(grid)):
+            for y in range(len(grid[x])):
+                if grid[x][y]:
+                    to_json[x][y] = [a.state() for a in grid[x][y]]
+                    #to_json[x][y] = max(grid[x][y], key=lambda agent: agent.weight).ASCIIDraw()
+                elif (x, y) in debug_cow_path:
+                    to_json[x][y] = []
+                else:
+                    to_json[x][y] = []
+
+        return to_json
 
     def run(self):
         for s in range(self.config["steps"]):
@@ -179,8 +199,12 @@ class Simulation:
                 time.sleep(0.1)
 
             if s % stats_modulo == 0 and self.config["generate_stats"]:
+                file = open("stats.txt", "w")
+                file.write(self.human_readable_state(self.state()))
+                file.close()
+                r = json.dumps(self.json_state(self.state()))
                 file = open("stats.json", "w")
-                file.write(self.http_rep(self.state()))
+                file.write(r)
                 file.close()
 
 
@@ -270,8 +294,12 @@ class Agent(object):
     def update_pos(self, pos):
         self.pos = pos
 
-    def debug(self, value):
-        self.debug = value
+    def update_debug(self, debug):
+        self.debug = debug
+
+    def state(self):
+        return {'type': self.ASCIIDraw(),
+                'weight': self.weight}
 
 
 class WalkingAgent(Agent):
@@ -456,6 +484,7 @@ class Cow(WalkingAgent):
     def state(self):
         return {
             "pos": self.pos,
+            "debug": self.debug,
             "alive": self.alive,
             "current_target": self.current_target,
             "current_objective": self.current_objective,
@@ -464,9 +493,11 @@ class Cow(WalkingAgent):
             "grass": self.grass,
             "stuck_recalc": self.stuck_recalc,
             "path": self.current_path,
+            'type': self.ASCIIDraw(),
+            'weight': self.weight
         }
 
-    def __repr__(self):
+    def ASCIIDraw(self):
         if not self.alive:
             return "X"
         return "K"
@@ -476,7 +507,7 @@ class Wall(Agent):
     def __init__(self, model):
         super().__init__(model)
 
-    def __repr__(self):
+    def ASCIIDraw(self):
         return "#"
 
 
@@ -484,7 +515,7 @@ class Bed(Agent):
     def __init__(self, model):
         super().__init__(model, weight=99)
 
-    def __repr__(self):
+    def ASCIIDraw(self):
         return "B"
 
 
@@ -492,7 +523,7 @@ class Feeder(Agent):
     def __init__(self, model):
         super().__init__(model, weight=99)
 
-    def __repr__(self):
+    def ASCIIDraw(self):
         return "F"
 
 
@@ -500,7 +531,7 @@ class Water(Agent):
     def __init__(self, model):
         super().__init__(model, weight=99)
 
-    def __repr__(self):
+    def ASCIIDraw(self):
         return "W"
 
 
@@ -508,7 +539,7 @@ class Grass(Agent):
     def __init__(self, model):
         super().__init__(model, weight=99)
 
-    def __repr__(self):
+    def ASCIIDraw(self):
         return "G"
 
 
@@ -534,7 +565,7 @@ class OneWayGate(Agent):
                 return True
         return False
 
-    def __repr__(self):
+    def ASCIIDraw(self):
         return self.direction
 
 
@@ -543,8 +574,8 @@ class SmartGate(Agent):
         super().__init__(model, weight=99)
         self.direction = direction
 
-    def __repr__(self):
-        return "#"
+    def ASCIIDraw(self):
+        return "O"
 
 
 def sim(config):
@@ -566,16 +597,30 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 class web_server(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
-            self.path = "/stats.json"
-        try:
-            # Reading the file
-            file_to_open = open(self.path[1:]).read()
-            self.send_response(200)
-        except:
-            file_to_open = "File not found"
-            self.send_response(404)
-        self.end_headers()
-        self.wfile.write(bytes(file_to_open, "utf-8"))
+            self.path = "/index.html"
+        if 'png' in self.path:
+            try:
+                # Reading the file
+                file_to_open = open(self.path[1:], 'rb').read()
+                self.send_response(200)
+            except:
+                file_to_open = "File not found"
+                self.send_response(404)
+            self.send_header('Content-Type', "image/png")
+            self.end_headers()
+            self.wfile.write(bytes(file_to_open))
+        else:
+            try:
+                # Reading the file
+                file_to_open = open(self.path[1:]).read()
+                self.send_response(200)
+            except:
+                file_to_open = "File not found"
+                self.send_response(404)
+            if 'json' in self.path:
+                self.send_header('Content-Type', "text/plain")
+            self.end_headers()
+            self.wfile.write(bytes(file_to_open, "utf-8"))
 
 
 def http_server():
@@ -590,7 +635,7 @@ if __name__ == "__main__":
 
     jobs = []
     for k in range(threads):
-        jobs.append(config)
+        jobs.append(config.copy())
 
     jobs[0]["generate_stats"] = True
 
