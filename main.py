@@ -10,7 +10,7 @@ from pprint import pprint, pformat
 
 debug = True
 tests = True
-slowmo = True
+slowmo = False
 profile = False
 threads = 1 if debug else multiprocessing.cpu_count() - 2
 
@@ -51,29 +51,49 @@ class Simulation:
         if debug:
             self.cows[0].update_debug(True)
 
-        walls = []
-        for i in range(10):
-            x, y = self.random_pos()
-            direction = random.choice([2, 4, 6, 8])
-            length = random.randrange(10)
-            walls.append((x, y, direction, length))
+        def place_random_agents(agent_type, groups, max_agents, cluster=False):
+            agents = []
+            for i in range(groups):
+                x, y = self.random_pos()
+                direction = random.choice([2, 4, 6, 8])
+                number_of_agents = random.randrange(max_agents)
+                agents.append((x, y, direction, number_of_agents))
+            for agent in agents:
+                x, y, direction, number_of_agents = agent
+                posistions = [(x,y)]
+                for n in range(number_of_agents):
+                    direction = random.choice([2, 4, 6, 8]) if cluster else direction
+                    if direction == 6:
+                        x += 1
+                    elif direction == 2:
+                        y -= 1
+                    elif direction == 4:
+                        x -= 1
+                    elif direction == 8:
+                        y += 1
+                    if self.barn.valid_cell((x, y)) and self.barn.is_cell_empty((x,y)):
+                        posistions.append((x,y))
+                for x, y in posistions:
+                    if agent_type == 'wall': self.barn.place_agent(Wall(self), (x, y))
+                    if agent_type == 'grass':
+                        self.barn.place_agent(Grass(self), (x, y))
+                        self.barn.grass_positions.append((x,y))
+                    if agent_type == 'water':
+                        self.barn.place_agent(Water(self), (x, y))
+                        self.barn.water_positions.append((x,y))
+                    if agent_type == 'feeder':
+                        self.barn.place_agent(Feeder(self), (x, y))
+                        self.barn.concentrate_positions.append((x,y))
+                    if agent_type == 'bed':
+                        self.barn.place_agent(Bed(self), (x, y))
+                        self.barn.sleep_positions.append((x,y))
 
-        for wall in walls:
-            x, y, direction, length = wall
-            w = Wall(self)
-            self.barn.place_agent(w, (x, y))
-            for n in range(length):
-                if direction == 6:
-                    x += 1
-                elif direction == 2:
-                    y -= 1
-                elif direction == 4:
-                    x -= 1
-                elif direction == 8:
-                    y += 1
-                w = Wall(self)
-                if self.barn.valid_cell((x, y)):
-                    self.barn.place_agent(w, (x, y))
+        place_random_agents('wall', groups=10, max_agents=10)
+        place_random_agents('grass', groups=5, max_agents=5)
+        place_random_agents('water', groups=5, max_agents=3)
+        place_random_agents('feeder', groups=5, max_agents=2)
+        place_random_agents('bed', groups=10, max_agents=10, cluster=True)
+
 
         for cow in self.cows:
             x, y = None, None
@@ -83,45 +103,6 @@ class Simulation:
                     break
             self.barn.place_agent(cow, (x, y))
 
-        for i in range(10):
-            g = Grass(self)
-            x, y = None, None
-            while True:
-                x, y = self.random_pos()
-                if self.barn.is_cell_empty((x, y)):
-                    break
-            self.barn.grass_positions.append((x, y))
-            self.barn.place_agent(g, (x, y))
-
-        for i in range(5):
-            f = Feeder(self)
-            x, y = None, None
-            while True:
-                x, y = self.random_pos()
-                if self.barn.is_cell_empty((x, y)):
-                    break
-            self.barn.concentrate_positions.append((x, y))
-            self.barn.place_agent(f, (x, y))
-
-        for i in range(10):
-            w = Water(self)
-            x, y = None, None
-            while True:
-                x, y = self.random_pos()
-                if self.barn.is_cell_empty((x, y)):
-                    break
-            self.barn.water_positions.append((x, y))
-            self.barn.place_agent(w, (x, y))
-
-        for i in range(20):
-            b = Bed(self)
-            x, y = None, None
-            while True:
-                x, y = self.random_pos()
-                if self.barn.is_cell_empty((x, y)):
-                    break
-            self.barn.sleep_positions.append((x, y))
-            self.barn.place_agent(b, (x, y))
 
     def random_pos(self):
         x = random.randrange(config["barn_height"])
@@ -178,7 +159,6 @@ class Simulation:
             for y in range(len(grid[x])):
                 if grid[x][y]:
                     to_json[x][y] = [a.state() for a in grid[x][y]]
-                    #to_json[x][y] = max(grid[x][y], key=lambda agent: agent.weight).ASCIIDraw()
                 elif (x, y) in debug_cow_path:
                     to_json[x][y] = []
                 else:
@@ -256,7 +236,7 @@ class Barn:
 
     def is_cell_empty(self, pos):
         x, y = pos
-        return True if len(self.grid[x][y]) == 0 else False
+        return len(self.grid[x][y]) == 0
 
     def move_agent(self, agent, new_pos):
         if tests:

@@ -72,6 +72,7 @@
                         if (agent['type'] === 'B') { ctx.drawImage(image('bed'), canvas_x, canvas_y, grid_size, grid_size); }
                         if (agent['type'] === 'F') { ctx.drawImage(image('feeder'), canvas_x, canvas_y, grid_size, grid_size); }
                         if (agent['type'] === 'K') { ctx.drawImage(image('cow'), canvas_x, canvas_y, grid_size, grid_size); }
+                        if (agent['type'] === 'X') { ctx.drawImage(image('cow_dead'), canvas_x, canvas_y, grid_size, grid_size); }
                         if (agent['debug']) { ctx.fillText("debug-ku", canvas_x, canvas_y); }
                     }
                 }
