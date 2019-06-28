@@ -88,7 +88,7 @@ class Simulation:
                         self.barn.place_agent(Bed(self), (x, y))
                         self.barn.sleep_positions.append((x,y))
 
-        place_random_agents('wall', groups=10, max_agents=10)
+        place_random_agents('wall', groups=30, max_agents=10)
         place_random_agents('grass', groups=5, max_agents=5)
         place_random_agents('water', groups=5, max_agents=3)
         place_random_agents('feeder', groups=5, max_agents=2)
@@ -107,27 +107,33 @@ class Simulation:
     def random_pos(self):
         x = random.randrange(config["barn_height"])
         y = random.randrange(config["barn_width"])
+        while not self.barn.is_cell_empty((x,y)):
+            x = random.randrange(config["barn_height"])
+            y = random.randrange(config["barn_width"])
         return (x, y)
 
     def state(self):
         debug_cow = next(cow for cow in self.cows if cow.debug)
         dead = len([cow for cow in self.cows if not cow.alive])
-        water = [cow.water for cow in self.cows]
-        # print("Mean:", numpy.mean(results), " Median:", numpy.median(results), " Stdev:", numpy.std(results))
+        water = [cow.water for cow in self.cows if cow.alive]
+        stuck_recalc = [cow.stuck_recalc for cow in self.cows if cow.alive]
         return {
             "model": {
                 "dead": dead,
                 "water_mean": numpy.mean(water),
                 "water_median": numpy.median(water),
                 "water_stdev": numpy.std(water),
+                "stuck_recalc_mean": numpy.mean(stuck_recalc),
+                "stuck_recalc_median": numpy.median(stuck_recalc),
+                "stuck_recalc_stdev": numpy.std(stuck_recalc),
+                "step": self.step,
             },
-            "barn": self.barn.state(),
-            "step": self.step,
             "debug_cow": debug_cow,
+            "barn": self.barn.state(),
         }
 
     def human_readable_state(self, state):
-        output = "Step: {}\n".format(state["step"])
+        output = "Step: {}\n".format(state['model']["step"])
         grid = state["barn"]["grid"]
         debug_cow_path = state["debug_cow"].current_path
         debug_cow_state = state["debug_cow"].state()
@@ -152,19 +158,19 @@ class Simulation:
         grid = state["barn"]["grid"]
         debug_cow_path = state["debug_cow"].current_path
         debug_cow_state = state["debug_cow"].state()
-        model = state["model"]
         w, h = len(grid), len(grid[0])
-        to_json = [[[] for x in range(h)] for y in range(w)]
+        grid_json = [[[] for x in range(h)] for y in range(w)]
         for x in range(len(grid)):
             for y in range(len(grid[x])):
                 if grid[x][y]:
-                    to_json[x][y] = [a.state() for a in grid[x][y]]
+                    grid_json[x][y] = [a.state() for a in grid[x][y]]
                 elif (x, y) in debug_cow_path:
-                    to_json[x][y] = []
+                    grid_json[x][y] = [{'type': '*'}]
                 else:
-                    to_json[x][y] = []
+                    grid_json[x][y] = []
 
-        return to_json
+        return {'barn': grid_json,
+                'simulation': state['model']}
 
     def run(self):
         for s in range(self.config["steps"]):

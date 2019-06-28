@@ -15,6 +15,7 @@
               dataType: 'json',
               success: function (data) {
                 displayGrid(data);
+                displayStats(data['simulation']);
               }
             });
         };
@@ -52,14 +53,15 @@
             ctx.lineWidth = parseInt(gridOptions.LinesSize);
             grid_size = 0;
             grid_size = parseInt(gridOptions.grid_size);
-            canvas.width  = grid_size * data[0].length;
-            canvas.height = grid_size * data.length;
-            for (x = 0; x < data[0].length; x += 1) {
-                for (y = 0; y < data.length; y += 1) {
+            var barn = data['barn'];
+            canvas.width  = grid_size * barn[0].length;
+            canvas.height = grid_size * barn.length;
+            for (x = 0; x < barn[0].length; x += 1) {
+                for (y = 0; y < barn.length; y += 1) {
                     var canvas_x = x * grid_size;
                     var canvas_y = y * grid_size;
-                    //ctx.fillText(data[x][y], canvas_x, canvas_y);
-                    var agents = data[y][x];
+                    //ctx.fillText(barn[x][y], canvas_x, canvas_y);
+                    var agents = barn[y][x];
                     if (agents.length === 0) { continue; }
                     agents.sort((a, b) => a.weight - b.weight);
                     agent_type = agents[0]['type'];
@@ -73,19 +75,24 @@
                         if (agent['type'] === 'F') { ctx.drawImage(image('feeder'), canvas_x, canvas_y, grid_size, grid_size); }
                         if (agent['type'] === 'K') { ctx.drawImage(image('cow'), canvas_x, canvas_y, grid_size, grid_size); }
                         if (agent['type'] === 'X') { ctx.drawImage(image('cow_dead'), canvas_x, canvas_y, grid_size, grid_size); }
+                        if (agent['type'] === '*') { ctx.fillText("*", canvas_x, canvas_y) ;}
                         if (agent['debug']) { ctx.fillText("debug-ku", canvas_x, canvas_y); }
                     }
                 }
             }
         }
     }
+    function displayStats(data) {
+        $('#stats').html(JSON.stringify(data, null, "<br>"));
+    }
     </script>
 </head>
 
 <body onload="">
     <h2>Cowsim</h2>
-    <canvas id="barn" width="" height="">
+    <canvas id="barn" width="" height="" style="border:1px solid black;">
     </canvas>
+    <div id="stats"></div>
     <br />
     Options:
     <select id="" onchange="">
