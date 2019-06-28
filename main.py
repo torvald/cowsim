@@ -318,8 +318,12 @@ class WalkingAgent(Agent):
         # [0] is start posistion, [1] is where we want to go next
         target = self.current_target
 
-        if len(self.current_path) == 0:
-            print("bfs thinks you should stay put")
+        if len(self.current_path) == 0 and self.pos != self.current_target:
+            # BUG
+            self.stuck_recalc += 1
+            self.current_objective = None
+            #print("bfs thinks you should stay put {}".format(self.pos))
+            #print(self.state())
             # self.current_path = None
             return
 
@@ -409,7 +413,10 @@ class Cow(WalkingAgent):
     def _update_state(self):
         self.water -= use_water_per_step
         self.grass -= use_grass_per_step
-        neighbors = self.model.barn.neighbors(self.pos, include_center=True)
+        #neighbors = self.model.barn.neighbors(self.pos, include_center=True)
+        # Test with cow having to be in the grid where the resource is
+        x, y = self.pos
+        neighbors = self.model.barn.grid[x][y]
 
         if (
             any(type(agent) is Water for agent in neighbors)
@@ -440,9 +447,13 @@ class Cow(WalkingAgent):
             self.current_target = random.choice(self.model.barn.concentrate_positions)
         if new_objective == "sleep":
             self.current_target = random.choice(self.model.barn.sleep_positions)
-        self.current_path = self.bfs(
-            self.model.barn.grid, self.pos, self.current_target
-        )
+        if not self.model.barn.is_cell_walkable(self.current_target):
+            # if there is another cow on target, choose another one recursivly
+            self._update_target(new_objective)
+        else:
+            self.current_path = self.bfs(
+                self.model.barn.grid, self.pos, self.current_target
+            )
 
     def _calc_objective(self):
         # if on the move, easier to change cow's mind
