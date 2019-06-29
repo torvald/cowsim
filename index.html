@@ -8,24 +8,26 @@
     <script>
 
     $( document ).ready(function() {
+        var last_step = 0
         function getData() {
              $.ajax({
               type: 'GET',
               url: 'http://193.35.52.75:8585/stats.json',
               dataType: 'json',
               success: function (data) {
+                if (data['simulation']['step'] === last_step) { return }
                 displayGrid(data);
                 displayStats(data['simulation']);
+                last_step = data['simulation']['step'];
               }
             });
         };
-
         getData();
         function loop () {
             setTimeout(function () {
                 getData();
                 loop();
-            }, 500);
+            }, 200);
         }
         loop();
     });
@@ -45,6 +47,7 @@
     var ctx, canvas;
 
     function displayGrid(data) {
+        var t0 = performance.now();
         var grid_size;
         canvas = document.getElementById("barn");
         if (canvas.getContext) {
@@ -96,6 +99,9 @@
                 }
             }
         }
+
+        var t1 = performance.now();
+        console.log("Call to doSomething took " + (t1 - t0) + " milliseconds.")
     }
     function displayStats(data) {
         $('#stats').html(JSON.stringify(data, null, "<br>"));

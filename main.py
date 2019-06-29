@@ -19,15 +19,14 @@ sec_per_step = 20
 need_water_per_24hour = 100
 use_water_per_step = need_water_per_24hour / 24.0 / 60 / 60 * sec_per_step
 need_grass_per_24hour = 30
+need_consentrate_per_24hour = 15
 use_grass_per_step = need_grass_per_24hour / 24.0 / 60 / 60 * sec_per_step
+use_consentrate_per_step = need_consentrate_per_24hour / 24.0 / 60 / 60 * sec_per_step
 drinks_per_step = 1
 eats_grass_per_step = 0.5
 eats_consentrate_per_step = 0.3
 
-directions = {2: '↓',
-        4: '←',
-        6: '→',
-        8: '↑'}
+directions = {2: "↓", 4: "←", 6: "→", 8: "↑"}
 
 config = {
     "steps": 10000,
@@ -56,18 +55,20 @@ class Simulation:
         if debug:
             self.cows[0].update_debug(True)
 
-        def place_random_agents(agent_type, groups, max_agents, min_agents=1, cluster=False):
+        def place_random_agents(
+            agent_type, groups, max_agents, min_agents=1, cluster=False
+        ):
             assert min_agents <= max_agents
             agents = []
             for i in range(groups):
                 x, y = self.random_pos()
                 direction = random.choice([2, 4, 6, 8])
-                number_of_agents = random.randrange(min_agents, max_agents+1)
+                number_of_agents = random.randrange(min_agents, max_agents + 1)
                 agents.append((x, y, direction, number_of_agents))
             for agent in agents:
                 x, y, direction, number_of_agents = agent
-                posistions = [(x,y)]
-                for n in range(number_of_agents-1):
+                posistions = [(x, y)]
+                for n in range(number_of_agents - 1):
                     direction = random.choice([2, 4, 6, 8]) if cluster else direction
                     if direction == 6:
                         x += 1
@@ -77,32 +78,33 @@ class Simulation:
                         x -= 1
                     elif direction == 2:
                         y += 1
-                    if self.barn.valid_cell((x, y)) and self.barn.is_cell_empty((x,y)):
-                        posistions.append((x,y))
+                    if self.barn.valid_cell((x, y)) and self.barn.is_cell_empty((x, y)):
+                        posistions.append((x, y))
                 # convert to set, to get uniqe posistions, clusters may generate the same pos many times
                 for x, y in set(posistions):
-                    if agent_type == 'wall': self.barn.place_agent(Wall(self), (x, y))
-                    if agent_type == 'onewaygate': self.barn.place_agent(OneWayGate(self, direction), (x, y))
-                    if agent_type == 'grass':
+                    if agent_type == "wall":
+                        self.barn.place_agent(Wall(self), (x, y))
+                    if agent_type == "onewaygate":
+                        self.barn.place_agent(OneWayGate(self, direction), (x, y))
+                    if agent_type == "grass":
                         self.barn.place_agent(Grass(self), (x, y))
-                        self.barn.grass_positions.append((x,y))
-                    if agent_type == 'water':
+                        self.barn.grass_positions.append((x, y))
+                    if agent_type == "water":
                         self.barn.place_agent(Water(self), (x, y))
-                        self.barn.water_positions.append((x,y))
-                    if agent_type == 'feeder':
+                        self.barn.water_positions.append((x, y))
+                    if agent_type == "feeder":
                         self.barn.place_agent(Feeder(self), (x, y))
-                        self.barn.concentrate_positions.append((x,y))
-                    if agent_type == 'bed':
+                        self.barn.concentrate_positions.append((x, y))
+                    if agent_type == "bed":
                         self.barn.place_agent(Bed(self), (x, y))
-                        self.barn.sleep_positions.append((x,y))
+                        self.barn.sleep_positions.append((x, y))
 
-        place_random_agents('wall', groups=50, max_agents=10, min_agents=3)
-        place_random_agents('onewaygate', groups=0, max_agents=1)
-        place_random_agents('grass', groups=5, max_agents=5)
-        place_random_agents('water', groups=5, max_agents=3)
-        place_random_agents('feeder', groups=5, max_agents=2)
-        place_random_agents('bed', groups=5, max_agents=20, min_agents=20, cluster=True)
-
+        place_random_agents("wall", groups=50, max_agents=10, min_agents=3)
+        place_random_agents("onewaygate", groups=0, max_agents=1)
+        place_random_agents("grass", groups=5, max_agents=5)
+        place_random_agents("water", groups=5, max_agents=3)
+        place_random_agents("feeder", groups=5, max_agents=2)
+        place_random_agents("bed", groups=5, max_agents=20, min_agents=20, cluster=True)
 
         for cow in self.cows:
             x, y = None, None
@@ -112,11 +114,10 @@ class Simulation:
                     break
             self.barn.place_agent(cow, (x, y))
 
-
     def random_pos(self):
         x = random.randrange(config["barn_height"])
         y = random.randrange(config["barn_width"])
-        if self.barn.is_cell_empty((x,y)):
+        if self.barn.is_cell_empty((x, y)):
             return (x, y)
         return self.random_pos()
 
@@ -141,7 +142,7 @@ class Simulation:
         }
 
     def human_readable_state(self, state):
-        output = "Step: {}\n".format(state['model']["step"])
+        output = "Step: {}\n".format(state["model"]["step"])
         grid = state["barn"]["grid"]
         debug_cow_path = state["debug_cow"].current_path
         debug_cow_state = state["debug_cow"].state()
@@ -149,7 +150,9 @@ class Simulation:
         for x in range(len(grid)):
             for y in range(len(grid[x])):
                 if grid[x][y]:
-                    output += max(grid[x][y], key=lambda agent: agent.weight).ASCIIDraw()
+                    output += max(
+                        grid[x][y], key=lambda agent: agent.weight
+                    ).ASCIIDraw()
                 elif (x, y) in debug_cow_path:
                     output += "*"
                 else:
@@ -173,14 +176,16 @@ class Simulation:
                 if grid[x][y]:
                     grid_json[x][y] = [a.state() for a in grid[x][y]]
                 elif (x, y) in debug_cow_path:
-                    grid_json[x][y] = [{'type': '*'}]
+                    grid_json[x][y] = [{"type": "*"}]
                 else:
                     grid_json[x][y] = []
 
-        return {'barn': grid_json,
-                'walking_path_heatmap': state['barn']['walking_path_heatmap'],
-                'walking_path_heatmap_max': state['barn']['walking_path_heatmap_max'],
-                'simulation': state['model']}
+        return {
+            "barn": grid_json,
+            "walking_path_heatmap": state["barn"]["walking_path_heatmap"],
+            "walking_path_heatmap_max": state["barn"]["walking_path_heatmap_max"],
+            "simulation": state["model"],
+        }
 
     def run(self):
         for s in range(self.config["steps"]):
@@ -192,7 +197,7 @@ class Simulation:
             stats_modulo = 100
             if slowmo:
                 stats_modulo = 1
-                time.sleep(0.1)
+                time.sleep(0.05)
 
             if s % stats_modulo == 0 and self.config["generate_stats"]:
                 file = open("stats.txt", "w")
@@ -280,10 +285,14 @@ class Barn:
         agent.update_pos(pos)
 
     def state(self):
-        walking_path_heatmap_max = max(max(v) for v in [i for i in self.walking_path_heatmap])
-        return {"grid": self.grid,
-                "walking_path_heatmap": self.walking_path_heatmap,
-                "walking_path_heatmap_max": walking_path_heatmap_max}
+        walking_path_heatmap_max = max(
+            max(v) for v in [i for i in self.walking_path_heatmap]
+        )
+        return {
+            "grid": self.grid,
+            "walking_path_heatmap": self.walking_path_heatmap,
+            "walking_path_heatmap_max": walking_path_heatmap_max,
+        }
 
 
 class Agent(object):
@@ -306,9 +315,7 @@ class Agent(object):
         self.debug = debug
 
     def state(self):
-        return {'type': self.ASCIIDraw(),
-                'pos': str(self.pos),
-                'weight': self.weight}
+        return {"type": self.ASCIIDraw(), "pos": str(self.pos), "weight": self.weight}
 
 
 class WalkingAgent(Agent):
@@ -345,8 +352,8 @@ class WalkingAgent(Agent):
             # BUG
             self.stuck_recalc += 1
             self.current_objective = None
-            #print("bfs thinks you should stay put {}".format(self.pos))
-            #print(self.state())
+            # print("bfs thinks you should stay put {}".format(self.pos))
+            # print(self.state())
             # self.current_path = None
             return
 
@@ -375,17 +382,12 @@ class WalkingAgent(Agent):
             explore = [(x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)]
             random.shuffle(explore)
             for x2, y2 in explore:
+                if (x2, y2) in seen:
+                    continue
                 # ignore cells out of bound
                 if not self.model.barn.valid_cell((x2, y2)):
                     continue
-                # Dont search though walls
                 agents = grid[x2][y2]
-                if any(type(agent) is Wall for agent in agents):
-                    continue
-                # and dont goto cells we have seen before
-                if (x2, y2) in seen:
-                    continue
-                # if we search through a onewaygate, check that you are on valid side
                 if any(type(agent) is OneWayGate for agent in agents):
                     assert len(agents) == 1
                     on_way_gate = list(filter(lambda x: type(x) is OneWayGate, agents))[
@@ -393,9 +395,16 @@ class WalkingAgent(Agent):
                     ]
                     if not on_way_gate.valid_entry_grid((x, y)):
                         continue
+                # we dont want to at onewaygates to "seen", as they can work
+                # from another directions
+                seen.add((x2, y2))
+                # Dont search though walls
+                if any(type(agent) is Wall for agent in agents):
+                    continue
+                # and dont goto cells we have seen before
+                # if we search through a onewaygate, check that you are on valid side
                 # looks good, lets search further
                 queue.append(path + [(x2, y2)])
-                seen.add((x2, y2))
         return []
 
 
@@ -437,7 +446,8 @@ class Cow(WalkingAgent):
     def _update_state(self):
         self.water -= use_water_per_step
         self.grass -= use_grass_per_step
-        #neighbors = self.model.barn.neighbors(self.pos, include_center=True)
+        self.concentrates -= use_consentrate_per_step
+        # neighbors = self.model.barn.neighbors(self.pos, include_center=True)
         # Test with cow having to be in the grid where the resource is
         x, y = self.pos
         neighbors = self.model.barn.grid[x][y]
@@ -514,8 +524,8 @@ class Cow(WalkingAgent):
             "grass": self.grass,
             "stuck_recalc": self.stuck_recalc,
             "path": self.current_path,
-            'type': self.ASCIIDraw(),
-            'weight': self.weight
+            "type": self.ASCIIDraw(),
+            "weight": self.weight,
         }
 
     def ASCIIDraw(self):
@@ -604,7 +614,8 @@ def sim(config):
     if profile:
         # todo add worker number awareness and add to file name
         import cProfile
-        cProfile.runctx('sim.run()', globals(), locals(), 'profile.prof')
+
+        cProfile.runctx("sim.run()", globals(), locals(), "profile.prof")
     else:
         sim.run()
 
@@ -619,15 +630,15 @@ class web_server(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
             self.path = "/index.html"
-        if 'png' in self.path:
+        if "png" in self.path:
             try:
                 # Reading the file
-                file_to_open = open(self.path[1:], 'rb').read()
+                file_to_open = open(self.path[1:], "rb").read()
                 self.send_response(200)
             except:
                 file_to_open = "File not found"
                 self.send_response(404)
-            self.send_header('Content-Type', "image/png")
+            self.send_header("Content-Type", "image/png")
             self.end_headers()
             self.wfile.write(bytes(file_to_open))
         else:
@@ -638,8 +649,8 @@ class web_server(BaseHTTPRequestHandler):
             except:
                 file_to_open = "File not found"
                 self.send_response(404)
-            if 'json' in self.path:
-                self.send_header('Content-Type', "text/plain")
+            if "json" in self.path:
+                self.send_header("Content-Type", "text/plain")
             self.end_headers()
             self.wfile.write(bytes(file_to_open, "utf-8"))
 
