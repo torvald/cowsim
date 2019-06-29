@@ -11,7 +11,7 @@ from pprint import pprint, pformat
 debug = True
 tests = True
 slowmo = False
-profile = False
+profile = True
 threads = 1 if debug else multiprocessing.cpu_count() - 2
 
 sec_per_step = 20
@@ -23,6 +23,10 @@ drinks_per_step = 1
 eats_grass_per_step = 0.5
 eats_consentrate_per_step = 0.3
 
+directions = {2: '↓',
+        4: '←',
+        6: '→',
+        8: '↑'}
 
 config = {
     "steps": 10000,
@@ -51,30 +55,33 @@ class Simulation:
         if debug:
             self.cows[0].update_debug(True)
 
-        def place_random_agents(agent_type, groups, max_agents, cluster=False):
+        def place_random_agents(agent_type, groups, max_agents, min_agents=1, cluster=False):
+            assert min_agents <= max_agents
             agents = []
             for i in range(groups):
                 x, y = self.random_pos()
                 direction = random.choice([2, 4, 6, 8])
-                number_of_agents = random.randrange(max_agents)
+                number_of_agents = random.randrange(min_agents, max_agents+1)
                 agents.append((x, y, direction, number_of_agents))
             for agent in agents:
                 x, y, direction, number_of_agents = agent
                 posistions = [(x,y)]
-                for n in range(number_of_agents):
+                for n in range(number_of_agents-1):
                     direction = random.choice([2, 4, 6, 8]) if cluster else direction
                     if direction == 6:
                         x += 1
-                    elif direction == 2:
+                    elif direction == 8:
                         y -= 1
                     elif direction == 4:
                         x -= 1
-                    elif direction == 8:
+                    elif direction == 2:
                         y += 1
                     if self.barn.valid_cell((x, y)) and self.barn.is_cell_empty((x,y)):
                         posistions.append((x,y))
-                for x, y in posistions:
+                # convert to set, to get uniqe posistions, clusters may generate the same pos many times
+                for x, y in set(posistions):
                     if agent_type == 'wall': self.barn.place_agent(Wall(self), (x, y))
+                    if agent_type == 'onewaygate': self.barn.place_agent(OneWayGate(self, direction), (x, y))
                     if agent_type == 'grass':
                         self.barn.place_agent(Grass(self), (x, y))
                         self.barn.grass_positions.append((x,y))
@@ -88,11 +95,12 @@ class Simulation:
                         self.barn.place_agent(Bed(self), (x, y))
                         self.barn.sleep_positions.append((x,y))
 
-        place_random_agents('wall', groups=30, max_agents=10)
+        place_random_agents('wall', groups=50, max_agents=10, min_agents=3)
+        place_random_agents('onewaygate', groups=0, max_agents=1)
         place_random_agents('grass', groups=5, max_agents=5)
         place_random_agents('water', groups=5, max_agents=3)
         place_random_agents('feeder', groups=5, max_agents=2)
-        place_random_agents('bed', groups=10, max_agents=10, cluster=True)
+        place_random_agents('bed', groups=2, max_agents=100, min_agents=20, cluster=True)
 
 
         for cow in self.cows:
@@ -107,10 +115,9 @@ class Simulation:
     def random_pos(self):
         x = random.randrange(config["barn_height"])
         y = random.randrange(config["barn_width"])
-        while not self.barn.is_cell_empty((x,y)):
-            x = random.randrange(config["barn_height"])
-            y = random.randrange(config["barn_width"])
-        return (x, y)
+        if self.barn.is_cell_empty((x,y)):
+            return (x, y)
+        return self.random_pos()
 
     def state(self):
         debug_cow = next(cow for cow in self.cows if cow.debug)
@@ -257,6 +264,11 @@ class Barn:
     def place_agent(self, agent, pos):
         x, y = pos
         # TODO: check
+        agent_type = type(agent)
+        for agent_x in self.grid[x][y]:
+            if type(agent_x) == agent_type:
+                print("bug")
+                return
         self.grid[x][y].append(agent)
         agent.update_pos(pos)
 
@@ -285,6 +297,7 @@ class Agent(object):
 
     def state(self):
         return {'type': self.ASCIIDraw(),
+                'pos': str(self.pos),
                 'weight': self.weight}
 
 
@@ -364,10 +377,11 @@ class WalkingAgent(Agent):
                     continue
                 # if we search through a onewaygate, check that you are on valid side
                 if any(type(agent) is OneWayGate for agent in agents):
+                    assert len(agents) == 1
                     on_way_gate = list(filter(lambda x: type(x) is OneWayGate, agents))[
                         0
                     ]
-                    if on_way_gate.valid_entry_grid((x, y)):
+                    if not on_way_gate.valid_entry_grid((x, y)):
                         continue
                 # looks good, lets search further
                 queue.append(path + [(x2, y2)])
@@ -541,29 +555,29 @@ class Grass(Agent):
 
 
 class OneWayGate(Agent):
-    def __init__(self, model):
+    def __init__(self, model, direction):
         super().__init__(model, weight=99)
         self.direction = direction
 
     def valid_entry_grid(self, pos):
         gate_pos_x, gate_pos_y = self.pos
         entry_pos_x, entry_pos_y = pos
-        if self.direction == "→":
+        if self.direction == "6":
             if gate_pos_x == entry_pos_x - 1 and gate_pos_y == entry_pos_y:
                 return True
-        if self.direction == "←":
+        if self.direction == "4":
             if gate_pos_x == entry_pos_x + 1 and gate_pos_y == entry_pos_y:
                 return True
-        if self.direction == "↑":
+        if self.direction == "8":
             if gate_pos_x == entry_pos_x and gate_pos_y == entry_pos_y - 1:
                 return True
-        if self.direction == "↓":
+        if self.direction == "2":
             if gate_pos_x == entry_pos_x and gate_pos_y == entry_pos_y + 1:
                 return True
         return False
 
     def ASCIIDraw(self):
-        return self.direction
+        return directions[self.direction]
 
 
 class SmartGate(Agent):
