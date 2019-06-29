@@ -54,6 +54,8 @@
             grid_size = 0;
             grid_size = parseInt(gridOptions.grid_size);
             var barn = data['barn'];
+            var walking_path_heatmap = data['walking_path_heatmap'];
+            var walking_path_heatmap_max = data['walking_path_heatmap_max'];
             canvas.width  = grid_size * barn[0].length;
             canvas.height = grid_size * barn.length;
             for (x = 0; x < barn[0].length; x += 1) {
@@ -62,10 +64,19 @@
                     var canvas_y = y * grid_size;
                     //ctx.fillText(barn[x][y], canvas_x, canvas_y);
                     var agents = barn[y][x];
+                    ctx.clearRect ( canvas_x, canvas_y, grid_size, grid_size );
+                    if (walking_path_heatmap[y][x] !== 0) {
+                        var ratio = walking_path_heatmap[y][x] / walking_path_heatmap_max;
+                        var h = 100 - (ratio * 100);
+                        var color = "hsl(" + h + ", 100%, 80%)";
+                        ctx.fillStyle = color;
+                        ctx.fillRect(canvas_x, canvas_y, grid_size, grid_size);
+                    }
+                    // reset color
+                    ctx.fillStyle = "#000";
                     if (agents.length === 0) { continue; }
                     agents.sort((a, b) => a.weight - b.weight);
                     agent_type = agents[0]['type'];
-                    if (true) { ctx.clearRect ( canvas_x, canvas_y, grid_size, grid_size ); }
                     for (var i = 0; i < agents.length; i++) {
                         var agent = agents[i];
                         if (agent['type'] === '#') { ctx.drawImage(image('wall'), canvas_x, canvas_y, grid_size, grid_size); }

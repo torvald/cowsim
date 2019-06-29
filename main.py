@@ -11,7 +11,8 @@ from pprint import pprint, pformat
 debug = True
 tests = True
 slowmo = False
-profile = True
+profile = False
+heatmap = True
 threads = 1 if debug else multiprocessing.cpu_count() - 2
 
 sec_per_step = 20
@@ -32,7 +33,7 @@ config = {
     "steps": 10000,
     "barn_height": 20,
     "barn_width": 70,
-    "number_of_cows": 20,
+    "number_of_cows": 40,
     "generate_stats": False,
     "max_water": 100,
     "max_grass": 30,
@@ -100,7 +101,7 @@ class Simulation:
         place_random_agents('grass', groups=5, max_agents=5)
         place_random_agents('water', groups=5, max_agents=3)
         place_random_agents('feeder', groups=5, max_agents=2)
-        place_random_agents('bed', groups=2, max_agents=100, min_agents=20, cluster=True)
+        place_random_agents('bed', groups=5, max_agents=20, min_agents=20, cluster=True)
 
 
         for cow in self.cows:
@@ -177,6 +178,8 @@ class Simulation:
                     grid_json[x][y] = []
 
         return {'barn': grid_json,
+                'walking_path_heatmap': state['barn']['walking_path_heatmap'],
+                'walking_path_heatmap_max': state['barn']['walking_path_heatmap_max'],
                 'simulation': state['model']}
 
     def run(self):
@@ -207,10 +210,12 @@ class Barn:
     water_positions = []
     concentrate_positions = []
     sleep_positions = []
+    walking_path_heatmap = []
 
     def __init__(self, config):
         w, h = config["barn_height"], config["barn_width"]
         self.grid = [[[] for x in range(h)] for y in range(w)]
+        self.walking_path_heatmap = [[0 for x in range(h)] for y in range(w)]
 
     def neighborhood(self, pos):
         x, y = pos
@@ -260,6 +265,8 @@ class Barn:
         self.grid[old_x][old_y].remove(agent)
         self.grid[new_x][new_y].append(agent)
         agent.update_pos(new_pos)
+        if heatmap:
+            self.walking_path_heatmap[new_x][new_y] += 1
 
     def place_agent(self, agent, pos):
         x, y = pos
@@ -273,7 +280,10 @@ class Barn:
         agent.update_pos(pos)
 
     def state(self):
-        return {"grid": self.grid}
+        walking_path_heatmap_max = max(max(v) for v in [i for i in self.walking_path_heatmap])
+        return {"grid": self.grid,
+                "walking_path_heatmap": self.walking_path_heatmap,
+                "walking_path_heatmap_max": walking_path_heatmap_max}
 
 
 class Agent(object):
